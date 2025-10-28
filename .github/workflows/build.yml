@@ -1,0 +1,167 @@
+name: Build DLT Viewer for ADB - Windows
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  QT_VERSION: '5.15.2'
+
+jobs:
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: ${{ env.QT_VERSION }}
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_mingw81'
+        modules: 'qtserialport'
+        cache: true
+        tools: 'tools_mingw,qt.tools.win64_mingw810'
+        
+    - name: Add MinGW to PATH
+      shell: pwsh
+      run: |
+        $mingwPath = "$env:RUNNER_WORKSPACE\Qt\Tools\mingw810_64\bin"
+        echo $mingwPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        
+    - name: Configure project with qmake
+      shell: cmd
+      run: |
+        echo Current directory: %CD%
+        mkdir build
+        cd build
+        qmake ..\BuildDltViewer.pro -r -spec win32-g++ "CONFIG+=release"
+        
+    - name: Build project
+      shell: cmd
+      run: |
+        cd build
+        mingw32-make -j4
+        
+    - name: Find and list built files
+      shell: pwsh
+      run: |
+        Write-Host "=== Searching for built executables and DLLs ==="
+        Get-ChildItem -Path build -Recurse -Include *.exe,*.dll | Where-Object { $_.Name -notmatch "moc_|qmake|qml" } | ForEach-Object {
+          Write-Host "Found: $($_.FullName)"
+        }
+        
+    - name: Collect artifacts
+      shell: pwsh
+      run: |
+        Write-Host "=== Creating deployment directory ==="
+        New-Item -ItemType Directory -Force -Path deploy | Out-Null
+        
+        # 查找主程序exe
+        Write-Host "=== Looking for main executable ==="
+        $mainExe = Get-ChildItem -Path build\src\release -Filter "dlt-viewer-for-adb.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        
+        if (-not $mainExe) {
+          # 如果不在release目录，尝试其他位置
+          $mainExe = Get-ChildItem -Path build -Recurse -Filter "dlt-viewer-for-adb.exe" | Where-Object { $_.DirectoryName -notmatch "moc|qmake" } | Select-Object -First 1
+        }
+        
+        if ($mainExe) {
+          Write-Host "Found main executable: $($mainExe.FullName)"
+          Copy-Item $mainExe.FullName -Destination deploy\
+        } else {
+          Write-Host "ERROR: Main executable not found!"
+          exit 1
+        }
+        
+        # 查找qdlt库
+        Write-Host "=== Looking for qdlt library ==="
+        $qdltDll = Get-ChildItem -Path build\qdlt\release -Filter "qdlt.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $qdltDll) {
+          $qdltDll = Get-ChildItem -Path build -Recurse -Filter "qdlt.dll" | Select-Object -First 1
+        }
+        
+        if ($qdltDll) {
+          Write-Host "Found qdlt library: $($qdltDll.FullName)"
+          Copy-Item $qdltDll.FullName -Destination deploy\
+        }
+        
+        # 收集插件
+        Write-Host "=== Collecting plugins ==="
+        $pluginDir = "build\plugin"
+        if (Test-Path $pluginDir) {
+          New-Item -ItemType Directory -Force -Path deploy\plugins | Out-Null
+          Get-ChildItem -Path $pluginDir -Recurse -Filter "*.dll" | Where-Object { $_.DirectoryName -match "release" } | ForEach-Object {
+            $pluginName = $_.Directory.Parent.Name
+            $targetDir = "deploy\plugins\$pluginName"
+            New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+            Copy-Item $_.FullName -Destination $targetDir\
+            Write-Host "Copied plugin: $pluginName\$($_.Name)"
+          }
+        }
+        
+        # 使用windeployqt收集Qt依赖
+        Write-Host "=== Running windeployqt ==="
+        windeployqt --release --no-translations deploy\dlt-viewer-for-adb.exe
+        
+        # 复制MinGW运行时DLL
+        Write-Host "=== Copying MinGW runtime DLLs ==="
+        $mingwBin = "$env:RUNNER_WORKSPACE\Qt\Tools\mingw810_64\bin"
+        @("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll") | ForEach-Object {
+          $dllPath = Join-Path $mingwBin $_
+          if (Test-Path $dllPath) {
+            Copy-Item $dllPath -Destination deploy\
+            Write-Host "Copied: $_"
+          }
+        }
+        
+        Write-Host "=== Deployment complete ==="
+        Get-ChildItem deploy -Recurse | ForEach-Object { Write-Host $_.FullName }
+        
+    - name: Create README
+      shell: pwsh
+      run: |
+        $readme = @"
+# DLT Viewer for ADB - Windows Build
+
+## Contents
+- dlt-viewer-for-adb.exe - Main application
+- qdlt.dll - Core DLT library
+- Qt5*.dll - Qt framework libraries
+- plugins/ - DLT Viewer plugins
+- MinGW runtime DLLs
+
+## Usage
+Simply run dlt-viewer-for-adb.exe
+
+## Built on
+- Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")
+- Qt Version: ${{ env.QT_VERSION }}
+- Compiler: MinGW-w64 8.1.0
+- Build: ${{ github.sha }}
+"@
+        $readme | Out-File -FilePath deploy\README.txt -Encoding utf8
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dlt-viewer-for-adb-windows
+        path: deploy/
+        retention-days: 90
+        
+    - name: Upload build log on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: |
+          build/**/*.log
+          build/**/Makefile*
+        retention-days: 7
