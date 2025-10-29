@@ -128,25 +128,26 @@ jobs:
     - name: Create README
       shell: pwsh
       run: |
-        $readme = @"
-# DLT Viewer for ADB - Windows Build
-
-## Contents
-- dlt-viewer-for-adb.exe - Main application
-- qdlt.dll - Core DLT library
-- Qt5*.dll - Qt framework libraries
-- plugins/ - DLT Viewer plugins
-- MinGW runtime DLLs
-
-## Usage
-Simply run dlt-viewer-for-adb.exe
-
-## Built on
-- Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")
-- Qt Version: ${{ env.QT_VERSION }}
-- Compiler: MinGW-w64 8.1.0
-- Build: ${{ github.sha }}
-"@
+        $readme = @'
+        # DLT Viewer for ADB - Windows Build
+        
+        ## Contents
+        - dlt-viewer-for-adb.exe - Main application
+        - qdlt.dll - Core DLT library
+        - Qt5*.dll - Qt framework libraries
+        - plugins/ - DLT Viewer plugins
+        - MinGW runtime DLLs
+        
+        ## Usage
+        Simply run dlt-viewer-for-adb.exe
+        
+        ## Built on
+        - Date: {0}
+        - Qt Version: ${{ env.QT_VERSION }}
+        - Compiler: MinGW-w64 8.1.0
+        - Build: ${{ github.sha }}
+        '@ -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")
+        
         $readme | Out-File -FilePath deploy\README.txt -Encoding utf8
         
     - name: Upload artifacts
