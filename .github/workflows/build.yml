@@ -106,9 +106,45 @@ jobs:
           }
         }
         
-        # 使用windeployqt收集Qt依赖
-        Write-Host "=== Running windeployqt ==="
-        windeployqt --release --no-translations deploy\dlt-viewer-for-adb.exe
+        # 复制Qt DLLs
+        Write-Host "=== Copying Qt DLLs ==="
+        $qtBin = "$env:RUNNER_WORKSPACE\Qt\5.15.2\mingw81_64\bin"
+        $qtDlls = @(
+          "Qt5Core.dll",
+          "Qt5Gui.dll", 
+          "Qt5Widgets.dll",
+          "Qt5Network.dll",
+          "Qt5SerialPort.dll",
+          "Qt5Svg.dll"
+        )
+        
+        foreach ($dll in $qtDlls) {
+          $dllPath = Join-Path $qtBin $dll
+          if (Test-Path $dllPath) {
+            Copy-Item $dllPath -Destination deploy\
+            Write-Host "Copied: $dll"
+          } else {
+            Write-Host "Warning: $dll not found"
+          }
+        }
+        
+        # 复制Qt平台插件
+        Write-Host "=== Copying Qt platform plugins ==="
+        $platformsDir = "$env:RUNNER_WORKSPACE\Qt\5.15.2\mingw81_64\plugins\platforms"
+        if (Test-Path $platformsDir) {
+          New-Item -ItemType Directory -Force -Path deploy\platforms | Out-Null
+          Copy-Item "$platformsDir\qwindows.dll" -Destination deploy\platforms\ -ErrorAction SilentlyContinue
+          Copy-Item "$platformsDir\qminimal.dll" -Destination deploy\platforms\ -ErrorAction SilentlyContinue
+          Write-Host "Copied platform plugins"
+        }
+        
+        # 复制Qt样式插件
+        $stylesDir = "$env:RUNNER_WORKSPACE\Qt\5.15.2\mingw81_64\plugins\styles"
+        if (Test-Path $stylesDir) {
+          New-Item -ItemType Directory -Force -Path deploy\styles | Out-Null
+          Copy-Item "$stylesDir\qwindowsvistastyle.dll" -Destination deploy\styles\ -ErrorAction SilentlyContinue
+          Write-Host "Copied style plugins"
+        }
         
         # 复制MinGW运行时DLL
         Write-Host "=== Copying MinGW runtime DLLs ==="
@@ -120,6 +156,13 @@ jobs:
             Write-Host "Copied: $_"
           }
         }
+        
+        # 创建qt.conf文件
+        Write-Host "=== Creating qt.conf ==="
+        @"
+[Paths]
+Plugins = plugins
+"@ | Out-File -FilePath deploy\qt.conf -Encoding ASCII
         
         Write-Host "=== Deployment complete ==="
         Get-ChildItem deploy -Recurse | ForEach-Object { Write-Host $_.FullName }
