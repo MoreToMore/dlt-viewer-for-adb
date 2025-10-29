@@ -159,10 +159,7 @@ jobs:
         
         # 创建qt.conf文件
         Write-Host "=== Creating qt.conf ==="
-        @"
-[Paths]
-Plugins = plugins
-"@ | Out-File -FilePath deploy\qt.conf -Encoding ASCII
+        "[Paths]`nPlugins = plugins" | Out-File -FilePath deploy\qt.conf -Encoding ASCII
         
         Write-Host "=== Deployment complete ==="
         Get-ChildItem deploy -Recurse | ForEach-Object { Write-Host $_.FullName }
