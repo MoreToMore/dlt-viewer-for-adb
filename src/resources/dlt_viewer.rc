@@ -1,14 +1,19 @@
 // MSVC, Windows SDK
 #if defined(_WIN32)
 
-IDI_ICON1               ICON    DISCARDABLE     "icon\org.genivi.DLTViewer.ico"
+IDI_ICON1               ICON    DISCARDABLE     "icon\\org.genivi.DLTViewer.ico"
 
 #include "../version.h"
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 
+#ifdef __MINGW32__
+#include <windows.h>
+#include <winver.h>
+#else
 #include <winres.h>
+#endif
 
 LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
 
